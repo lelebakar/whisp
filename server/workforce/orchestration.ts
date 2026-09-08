@@ -1,4 +1,6 @@
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
+import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
+import { ENV } from "../_core/env";
 
 export type WorkforcePlan = {
   objective: string;
@@ -25,7 +27,7 @@ const intakeNode = (state: WorkforceStateSnapshot) => ({
   events: [`Intake received: ${state.request.slice(0, 120)}`],
 });
 
-const routeNode = (state: WorkforceStateSnapshot) => ({
+const routeNode = () => ({
   status: "planned" as const,
   events: ["Right Hand will route the objective to the best-fit department and agent capabilities."],
 });
@@ -35,35 +37,55 @@ const approvalGateNode = (state: WorkforceStateSnapshot) => ({
   events: [state.plan?.approvalRequired ? "Human approval gate created before high-risk execution." : "No human approval required for this plan."],
 });
 
-/**
- * The graph is intentionally small and composable: model planning happens before
- * this graph, while deterministic state transitions, approval gates, and worker
- * handoff happen here. A production worker can attach a Postgres checkpointer and
- * Redis-backed queue without changing the UI contract.
- */
-export const workforceGraph = new StateGraph(WorkforceState)
-  .addNode("intake", intakeNode)
-  .addNode("route", routeNode)
-  .addNode("approval_gate", approvalGateNode)
-  .addEdge(START, "intake")
-  .addEdge("intake", "route")
-  .addEdge("route", "approval_gate")
-  .addEdge("approval_gate", END)
-  .compile();
+function buildWorkforceGraph(checkpointer?: unknown) {
+  return new StateGraph(WorkforceState)
+    .addNode("intake", intakeNode)
+    .addNode("route", routeNode)
+    .addNode("approval_gate", approvalGateNode)
+    .addEdge(START, "intake")
+    .addEdge("intake", "route")
+    .addEdge("route", "approval_gate")
+    .addEdge("approval_gate", END)
+    .compile(checkpointer ? { checkpointer: checkpointer as never } : undefined);
+}
 
-export async function runWorkforceGraph(request: string, plan: WorkforcePlan | null) {
-  return workforceGraph.invoke({
-    request,
-    plan,
-    events: [],
-    status: "intake",
-  });
+export const workforceGraph = buildWorkforceGraph();
+
+let checkpointerPromise: Promise<PostgresSaver | null> | null = null;
+
+async function getPostgresCheckpointer() {
+  if (!ENV.langgraphPostgresUrl) return null;
+  if (!checkpointerPromise) {
+    checkpointerPromise = (async () => {
+      const checkpointer = PostgresSaver.fromConnString(ENV.langgraphPostgresUrl);
+      await checkpointer.setup();
+      return checkpointer;
+    })().catch((error) => {
+      console.error("[LangGraph] Postgres checkpointer unavailable; using request-scoped fallback", error);
+      return null;
+    });
+  }
+  return checkpointerPromise;
+}
+
+export async function runWorkforceGraph(request: string, plan: WorkforcePlan | null, threadId = `right-hand-${Date.now()}`) {
+  const checkpointer = await getPostgresCheckpointer();
+  const graph = checkpointer ? buildWorkforceGraph(checkpointer) : workforceGraph;
+  return graph.invoke({ request, plan, events: [], status: "intake" }, { configurable: { thread_id: threadId } });
+}
+
+export function getRuntimeInfo() {
+  return {
+    graph: "langgraph",
+    checkpointer: ENV.langgraphPostgresUrl ? "postgres" : "memory-fallback",
+    redisQueue: ENV.redisUrl ? "redis" : "inline-fallback",
+  } as const;
 }
 
 export function getDefaultGraphDefinition() {
   return {
     engine: "langgraph",
-    version: 1,
+    version: 2,
     nodes: ["intake", "route", "approval_gate", "worker_handoff", "memory_write", "audit"],
     edges: [
       ["START", "intake"],

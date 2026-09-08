@@ -185,9 +185,39 @@ export const messages = mysqlTable("messages", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => ({ conversationIdx: index("message_conversation_idx").on(table.conversationId, table.createdAt), parentIdx: index("message_parent_idx").on(table.parentMessageId) }));
 
+export const auditLogs = mysqlTable("audit_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId").notNull(),
+  actorUserId: int("actorUserId"),
+  actorAgentId: int("actorAgentId"),
+  action: varchar("action", { length: 160 }).notNull(),
+  resourceType: varchar("resourceType", { length: 80 }).notNull(),
+  resourceId: varchar("resourceId", { length: 80 }),
+  outcome: mysqlEnum("outcome", ["success", "denied", "failed", "pending"]).default("success").notNull(),
+  details: json("details").$type<Record<string, unknown>>(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({ workspaceIdx: index("audit_workspace_idx").on(table.workspaceId), createdIdx: index("audit_created_idx").on(table.createdAt) }));
+
+export const toolRuns = mysqlTable("tool_runs", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId").notNull(),
+  agentId: int("agentId"),
+  toolId: int("toolId").notNull(),
+  workflowRunId: int("workflowRunId"),
+  status: mysqlEnum("status", ["queued", "running", "completed", "failed", "denied"]).default("queued").notNull(),
+  input: json("input").$type<Record<string, unknown>>(),
+  output: json("output").$type<Record<string, unknown>>(),
+  error: text("error"),
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({ workspaceIdx: index("tool_run_workspace_idx").on(table.workspaceId), statusIdx: index("tool_run_status_idx").on(table.status) }));
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type Agent = typeof agents.$inferSelect;
 export type Department = typeof departments.$inferSelect;
 export type Workflow = typeof workflows.$inferSelect;
 export type Approval = typeof approvals.$inferSelect;
+export type KnowledgeSource = typeof knowledgeSources.$inferSelect;
+export type AuditLog = typeof auditLogs.$inferSelect;

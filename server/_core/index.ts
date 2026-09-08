@@ -8,6 +8,9 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { registerRightHandStreamRoute } from "../workforce/stream";
+import { startWorkforceWorker } from "../workforce/queue";
+import { processWorkflowJob } from "../workforce/worker";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -36,6 +39,8 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+  registerRightHandStreamRoute(app);
+  await startWorkforceWorker(processWorkflowJob);
   // tRPC API
   app.use(
     "/api/trpc",
