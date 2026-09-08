@@ -1,629 +1,233 @@
+import { useAuth } from "@/_core/hooks/useAuth";
+import { startLogin } from "@/const";
+import { trpc } from "@/lib/trpc";
 import {
+  Activity,
   Archive,
-  ArrowLeft,
-  BellOff,
+  ArrowUpRight,
+  Bot,
+  BrainCircuit,
+  BriefcaseBusiness,
   Check,
-  CheckCheck,
+  CheckCircle2,
   ChevronDown,
-  CircleHelp,
+  CircleDot,
+  Clock3,
+  Code2,
+  Command,
   Copy,
-  Download,
+  Database,
   FileText,
-  Forward,
-  Group,
-  Image as ImageIcon,
-  Info,
-  Link2,
+  Fingerprint,
+  FolderKanban,
+  GitBranch,
+  Globe2,
+  Headphones,
+  LayoutGrid,
   LockKeyhole,
   Menu,
-  Mic,
+  MessageCircle,
   MoreHorizontal,
-  MoreVertical,
-  Paperclip,
-  Phone,
-  Pin,
+  Network,
   Plus,
+  RefreshCw,
   Search,
   Send,
-  Settings,
+  Settings2,
   ShieldCheck,
-  Smile,
-  SquarePen,
-  Star,
-  Trash2,
-  UserPlus,
+  Sparkles,
+  Target,
+  TerminalSquare,
   UsersRound,
-  Video,
+  Workflow,
   X,
+  Zap,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
-type Chat = {
+type Agent = {
   id: string;
   name: string;
-  initials: string;
-  tone: string;
-  preview: string;
-  time: string;
-  unread: number;
-  online?: boolean;
-  pinned?: boolean;
-  muted?: boolean;
-  isGroup?: boolean;
-  members?: number;
+  role: string;
+  dept: string;
+  avatar: string;
+  accent: string;
+  status: "online" | "working" | "idle";
+  expertise: string[];
+  last: string;
 };
 
-type Message = {
-  id: string;
-  text: string;
-  from: "me" | "them";
-  time: string;
-  status?: "sent" | "read";
-  starred?: boolean;
-  replyTo?: string;
-  kind?: "text" | "file";
-};
+type Department = { id: string; name: string; purpose: string; count: number; color: string; trend: string };
+type WorkforceMessage = { id: string; from: "user" | "rightHand" | "agent" | "system"; sender: string; body: string; time: string; kind?: "plan" | "normal" | "approval" };
 
-type ToastKind = "success" | "info";
+type ToastTone = "success" | "info";
+type Toast = { text: string; tone: ToastTone } | null;
 
-type ToastState = { message: string; kind: ToastKind } | null;
-
-const contactOptions = [
-  { id: "rani", name: "Rani Putri", initials: "RP", tone: "coral" },
-  { id: "dimas", name: "Dimas Pratama", initials: "DP", tone: "blue" },
-  { id: "sophie", name: "Sophie Laurent", initials: "SL", tone: "purple" },
-  { id: "fajar", name: "Fajar Nugroho", initials: "FN", tone: "amber" },
-  { id: "maya", name: "Maya Sari", initials: "MS", tone: "mint" },
+const agentsSeed: Agent[] = [
+  { id: "right-hand", name: "Ari", role: "AI Right Hand · Chief of Staff", dept: "Executive Office", avatar: "AR", accent: "mint", status: "online", expertise: ["Orchestration", "Planning", "Memory"], last: "Otak utama workforce" },
+  { id: "mira", name: "Mira Chen", role: "Head of Growth Intelligence", dept: "Growth & Marketing", avatar: "MC", accent: "violet", status: "working", expertise: ["Research", "Content", "Analytics"], last: "Synthesizing campaign brief" },
+  { id: "elio", name: "Elio Park", role: "Product Strategy Lead", dept: "Product & Design", avatar: "EP", accent: "blue", status: "online", expertise: ["Product", "UX", "Roadmaps"], last: "Available for delegation" },
+  { id: "noor", name: "Noor Patel", role: "Research Analyst", dept: "Research & Intelligence", avatar: "NP", accent: "amber", status: "working", expertise: ["Web research", "Synthesis", "Citations"], last: "Running market scan" },
+  { id: "sora", name: "Sora Kim", role: "Finance Controller", dept: "Finance & Operations", avatar: "SK", accent: "coral", status: "idle", expertise: ["Budgets", "Forecasting", "Controls"], last: "Last active 18 min ago" },
+  { id: "jax", name: "Jax Rivera", role: "Automation Engineer", dept: "Engineering & Automation", avatar: "JR", accent: "cyan", status: "online", expertise: ["APIs", "Code", "Workflows"], last: "Ready to build" },
 ];
 
-const seedChats: Chat[] = [
-  {
-    id: "rani",
-    name: "Rani Putri",
-    initials: "RP",
-    tone: "coral",
-    preview: "Oke, aku kirim brief-nya ya",
-    time: "10:42",
-    unread: 2,
-    online: true,
-    pinned: true,
-  },
-  {
-    id: "tim-studio",
-    name: "Tim Studio ✦",
-    initials: "TS",
-    tone: "mint",
-    preview: "Dimas: file final sudah naik",
-    time: "09:18",
-    unread: 5,
-    pinned: true,
-    isGroup: true,
-    members: 8,
-  },
-  {
-    id: "dimas",
-    name: "Dimas Pratama",
-    initials: "DP",
-    tone: "blue",
-    preview: "Siap, sampai ketemu besok!",
-    time: "Kemarin",
-    unread: 0,
-    online: false,
-  },
-  {
-    id: "keluarga",
-    name: "Keluarga Besar",
-    initials: "KB",
-    tone: "amber",
-    preview: "Ibu: Jangan lupa makan siang",
-    time: "Kemarin",
-    unread: 0,
-    muted: true,
-    isGroup: true,
-    members: 12,
-  },
-  {
-    id: "sophie",
-    name: "Sophie Laurent",
-    initials: "SL",
-    tone: "purple",
-    preview: "Photo",
-    time: "Senin",
-    unread: 0,
-    online: true,
-  },
-  {
-    id: "fajar",
-    name: "Fajar Nugroho",
-    initials: "FN",
-    tone: "orange",
-    preview: "Voice message",
-    time: "Minggu",
-    unread: 0,
-    muted: true,
-  },
+const departmentSeed: Department[] = [
+  { id: "exec", name: "Executive Office", purpose: "Priorities, decisions, and company-wide orchestration", count: 2, color: "mint", trend: "+4% throughput" },
+  { id: "growth", name: "Growth & Marketing", purpose: "Demand generation, messaging, and market signals", count: 6, color: "violet", trend: "+18% output" },
+  { id: "product", name: "Product & Design", purpose: "Customer insight, product strategy, and experience", count: 5, color: "blue", trend: "3 active threads" },
+  { id: "ops", name: "Finance & Operations", purpose: "Reliable systems, numbers, and operating cadence", count: 4, color: "amber", trend: "2 approvals" },
 ];
 
-const seedMessages: Record<string, Message[]> = {
-  rani: [
-    { id: "r-1", text: "Hai Naya! Udah lihat moodboard yang aku kirim?", from: "them", time: "10:32" },
-    { id: "r-2", text: "Sudah dong, aku suka banget sama arahnya. Warna hijaunya pas ✨", from: "me", time: "10:35", status: "read" },
-    { id: "r-3", text: "Kan! Aku kepikiran buat bikin sedikit lebih hangat di bagian background.", from: "them", time: "10:36" },
-    { id: "r-4", text: "Setuju. Mungkin pakai off-white dengan sedikit grain biar terasa lebih hidup.", from: "me", time: "10:38", status: "read" },
-    { id: "r-5", text: "Oke, aku kirim brief-nya ya", from: "them", time: "10:42" },
-  ],
-  "tim-studio": [
-    { id: "t-1", text: "Morning team, quick sync jam 11?", from: "them", time: "08:54" },
-    { id: "t-2", text: "Aku bisa join. Sekalian review final screens.", from: "me", time: "08:58", status: "read" },
-    { id: "t-3", text: "Dimas: file final sudah naik", from: "them", time: "09:18" },
-  ],
-  dimas: [
-    { id: "d-1", text: "Bro, deck presentasinya aman untuk besok?", from: "them", time: "Kemarin" },
-    { id: "d-2", text: "Sudah aku cek dua kali. Siap, sampai ketemu besok!", from: "me", time: "Kemarin", status: "read" },
-  ],
-  keluarga: [
-    { id: "k-1", text: "Minggu ini jadi kumpul di rumah Ibu?", from: "them", time: "Kemarin" },
-    { id: "k-2", text: "Jadi, jam 12 siang ya. Jangan telat 😄", from: "me", time: "Kemarin", status: "read" },
-    { id: "k-3", text: "Ibu: Jangan lupa makan siang", from: "them", time: "Kemarin" },
-  ],
-  sophie: [
-    { id: "s-1", text: "The new direction feels very clear. Love it!", from: "them", time: "Senin" },
-    { id: "s-2", text: "Thank you! I will send the updated type scale later today.", from: "me", time: "Senin", status: "read" },
-  ],
-  fajar: [
-    { id: "f-1", text: "Voice message", from: "them", time: "Minggu", kind: "file" },
-    { id: "f-2", text: "Aku dengerin nanti sore ya.", from: "me", time: "Minggu", status: "read" },
-  ],
-};
+const initialMessages: WorkforceMessage[] = [
+  { id: "welcome", from: "rightHand", sender: "Ari · AI Right Hand", body: "Good morning, Naya. I’m watching the whole company for you. Tell me what you want to move forward — I’ll turn it into a plan, bring in the right people, and keep you in the loop.", time: "09:41", kind: "normal" },
+  { id: "signal", from: "system", sender: "Workforce signal", body: "3 agents are online · 1 workflow is waiting for approval · memory sync completed 8 min ago", time: "09:42", kind: "normal" },
+  { id: "mira", from: "agent", sender: "Mira Chen · Growth", body: "I’ve prepared the first pass of the launch narrative. Ari routed this to me after your Q2 growth note.", time: "09:44", kind: "normal" },
+];
 
-const formatNow = () =>
-  new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+const workflowSeed = [
+  { name: "Weekly executive pulse", owner: "Ari", status: "Running", progress: 72, next: "Friday · 16:00", icon: Activity, color: "mint" },
+  { name: "Inbound lead qualification", owner: "Mira + Noor", status: "Waiting approval", progress: 44, next: "Needs your go-ahead", icon: Target, color: "violet" },
+  { name: "Customer insight loop", owner: "Elio", status: "Healthy", progress: 89, next: "Tomorrow · 09:00", icon: RefreshCw, color: "blue" },
+];
+
+const memorySeed = [
+  { title: "Naya prefers concise decision memos", type: "Preference", agent: "Ari", updated: "2h ago", score: 98 },
+  { title: "Q2 launch narrative: calm confidence", type: "Shared knowledge", agent: "Growth", updated: "Today", score: 91 },
+  { title: "Only ask for approval before external sends", type: "Permission rule", agent: "Workspace", updated: "Yesterday", score: 100 },
+  { title: "Research sources must include citations", type: "Department policy", agent: "Research", updated: "Yesterday", score: 96 },
+];
+
+function avatarClass(accent: string) { return `wf-avatar wf-${accent}`; }
 
 export default function Home() {
-  const [chats, setChats] = useState(seedChats);
-  const [messagesByChat, setMessagesByChat] = useState(seedMessages);
-  const [activeChatId, setActiveChatId] = useState("rani");
-  const [composer, setComposer] = useState("");
-  const [replyTo, setReplyTo] = useState<Message | null>(null);
-  const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<"all" | "unread" | "groups">("all");
-  const [toast, setToast] = useState<ToastState>(null);
-  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
-  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [conversationSearch, setConversationSearch] = useState("");
-  const [emojiOpen, setEmojiOpen] = useState(false);
-  const [attachmentOpen, setAttachmentOpen] = useState(false);
-  const [newChatOpen, setNewChatOpen] = useState(false);
-  const [groupOpen, setGroupOpen] = useState(false);
-  const [groupName, setGroupName] = useState("");
-  const [groupContacts, setGroupContacts] = useState<string[]>(["rani"]);
-  const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
-  const [forwardTargets, setForwardTargets] = useState<string[]>([]);
-  const [infoOpen, setInfoOpen] = useState(false);
-  const [chatMenuOpen, setChatMenuOpen] = useState(false);
-  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-  const [mobileShowChat, setMobileShowChat] = useState(true);
-  const [soundOn, setSoundOn] = useState(true);
-  const conversationRef = useRef<HTMLDivElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const longPressTimer = useRef<number | null>(null);
+  const { user, isAuthenticated, loading } = useAuth();
+  const planMutation = trpc.rightHand.plan.useMutation();
+  const [activeNav, setActiveNav] = useState("command");
+  const [activeAgentId, setActiveAgentId] = useState("right-hand");
+  const [messages, setMessages] = useState(initialMessages);
+  const [prompt, setPrompt] = useState("");
+  const [agentSearch, setAgentSearch] = useState("");
+  const [toast, setToast] = useState<Toast>(null);
+  const [showAgentModal, setShowAgentModal] = useState(false);
+  const [newAgentName, setNewAgentName] = useState("");
+  const [showSidebar, setShowSidebar] = useState(true);
+  const [showInfo, setShowInfo] = useState(true);
+  const [localAgents, setLocalAgents] = useState(agentsSeed);
+  const [selectedDepartment, setSelectedDepartment] = useState("all");
 
-  const activeChat = chats.find((chat) => chat.id === activeChatId) ?? chats[0];
-  const activeMessages = messagesByChat[activeChatId] ?? [];
+  const agents = localAgents;
+  const activeAgent = agents.find((agent) => agent.id === activeAgentId) ?? agents[0];
+  const filteredAgents = useMemo(() => agents.filter((agent) => {
+    const q = agentSearch.toLowerCase();
+    return (!q || `${agent.name} ${agent.role} ${agent.dept}`.toLowerCase().includes(q)) && (selectedDepartment === "all" || agent.dept === selectedDepartment);
+  }), [agents, agentSearch, selectedDepartment]);
 
-  const visibleChats = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    return chats.filter((chat) => {
-      const matchesQuery = !normalized || `${chat.name} ${chat.preview}`.toLowerCase().includes(normalized);
-      const matchesFilter = filter === "all" || (filter === "unread" ? chat.unread > 0 : chat.isGroup);
-      return matchesQuery && matchesFilter;
-    });
-  }, [chats, filter, query]);
-
-  const shownMessages = useMemo(() => {
-    const normalized = conversationSearch.trim().toLowerCase();
-    if (!normalized) return activeMessages;
-    return activeMessages.filter((message) => message.text.toLowerCase().includes(normalized));
-  }, [activeMessages, conversationSearch]);
-
-  useEffect(() => {
-    conversationRef.current?.scrollTo({ top: conversationRef.current.scrollHeight, behavior: "smooth" });
-  }, [activeChatId, activeMessages.length]);
-
-  useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), 2400);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
-
-  useEffect(() => {
-    const closeMenus = () => {
-      setSelectedMessageId(null);
-      setNewChatOpen(false);
-      setChatMenuOpen(false);
-      setProfileMenuOpen(false);
-    };
-    document.addEventListener("click", closeMenus);
-    return () => document.removeEventListener("click", closeMenus);
-  }, []);
-
-  const notify = (message: string, kind: ToastKind = "success") => setToast({ message, kind });
-
-  const selectChat = (chatId: string) => {
-    setActiveChatId(chatId);
-    setChats((current) => current.map((chat) => (chat.id === chatId ? { ...chat, unread: 0 } : chat)));
-    setConversationSearch("");
-    setSearchOpen(false);
-    setMobileShowChat(true);
+  const notify = (text: string, tone: ToastTone = "success") => {
+    setToast({ text, tone });
+    window.setTimeout(() => setToast(null), 2600);
   };
 
-  const appendMessage = (chatId: string, message: Message) => {
-    setMessagesByChat((current) => ({ ...current, [chatId]: [...(current[chatId] ?? []), message] }));
-    setChats((current) =>
-      current.map((chat) =>
-        chat.id === chatId ? { ...chat, preview: message.text, time: message.time === "sekarang" ? "sekarang" : message.time } : chat,
-      ),
-    );
-  };
+  const localPlanResponse = (request: string) => ({
+    summary: `Saya akan mengubah “${request}” menjadi execution loop yang terukur, dengan checkpoint sebelum tindakan berisiko.`,
+    department: request.toLowerCase().includes("market") || request.toLowerCase().includes("campaign") ? "Growth & Marketing" : "Executive Office",
+    selectedAgents: request.toLowerCase().includes("market") ? ["Mira Chen", "Noor Patel"] : ["Ari", "Elio Park", "Jax Rivera"],
+    steps: ["Clarify the outcome and success signal", "Route work to the best-fit agents", "Synthesize findings into a decision memo", "Ask for approval before external action"],
+  });
 
-  const sendMessage = () => {
-    const text = composer.trim();
-    if (!text) return;
-    const sentMessage: Message = {
-      id: `m-${Date.now()}`,
-      text,
-      from: "me",
-      time: formatNow(),
-      status: "read",
-      replyTo: replyTo?.text,
-    };
-    appendMessage(activeChatId, sentMessage);
-    setComposer("");
-    setReplyTo(null);
-    setEmojiOpen(false);
-    window.setTimeout(() => {
-      const response: Message = {
-        id: `reply-${Date.now()}`,
-        text: activeChat?.isGroup ? "Noted, teman-teman. Aku update di sini ya." : "Siap, aku cek sekarang ya ✦",
-        from: "them",
-        time: formatNow(),
-      };
-      appendMessage(activeChatId, response);
-    }, 900);
-  };
-
-  const openMessageMenu = (message: Message, rect: DOMRect) => {
-    setSelectedMessageId(message.id);
-    setMenuPosition({
-      top: Math.min(rect.bottom + 8, window.innerHeight - 256),
-      left: Math.max(12, Math.min(rect.left, window.innerWidth - 228)),
-    });
-  };
-
-  const clearLongPress = () => {
-    if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
-    longPressTimer.current = null;
-  };
-
-  const copyMessage = async (message: Message) => {
-    try {
-      await navigator.clipboard?.writeText(message.text);
-    } catch {
-      // Clipboard permissions can be unavailable in preview environments.
+  const sendPrompt = async () => {
+    const request = prompt.trim();
+    if (!request || planMutation.isPending) return;
+    setMessages((current) => [...current, { id: `u-${Date.now()}`, from: "user", sender: user?.name ?? "You", body: request, time: "now", kind: "normal" }]);
+    setPrompt("");
+    if (isAuthenticated) {
+      try {
+        const result = await planMutation.mutateAsync({ request });
+        setMessages((current) => [...current, { id: `p-${Date.now()}`, from: "rightHand", sender: "Ari · AI Right Hand", body: result.plan.summary, time: "now", kind: "plan" }]);
+        notify(`Plan ready · ${result.plan.selectedAgents.length} agents routed`);
+      } catch {
+        const plan = localPlanResponse(request);
+        setMessages((current) => [...current, { id: `p-${Date.now()}`, from: "rightHand", sender: "Ari · AI Right Hand", body: plan.summary, time: "now", kind: "plan" }]);
+        notify("Demo plan shown · sign in to run the live orchestrator", "info");
+      }
+    } else {
+      window.setTimeout(() => {
+        const plan = localPlanResponse(request);
+        setMessages((current) => [...current, { id: `p-${Date.now()}`, from: "rightHand", sender: "Ari · AI Right Hand", body: plan.summary, time: "now", kind: "plan" }]);
+        notify("Demo plan ready · sign in to run LangGraph orchestration", "info");
+      }, 520);
     }
-    setSelectedMessageId(null);
-    notify("Pesan disalin ke clipboard");
   };
 
-  const deleteMessage = (message: Message) => {
-    setMessagesByChat((current) => ({
-      ...current,
-      [activeChatId]: (current[activeChatId] ?? []).filter((item) => item.id !== message.id),
-    }));
-    setSelectedMessageId(null);
-    notify("Pesan dihapus dari chat", "info");
+  const addAgent = () => {
+    if (!newAgentName.trim()) return;
+    const initials = newAgentName.trim().split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+    setLocalAgents((current) => [...current, { id: `new-${Date.now()}`, name: newAgentName.trim(), role: "New workforce specialist", dept: "Executive Office", avatar: initials, accent: "mint", status: "idle", expertise: ["Needs configuration"], last: "Draft agent" }]);
+    setNewAgentName("");
+    setShowAgentModal(false);
+    notify("Agent draft created · configure memory and permissions next");
   };
-
-  const toggleStar = (message: Message) => {
-    setMessagesByChat((current) => ({
-      ...current,
-      [activeChatId]: (current[activeChatId] ?? []).map((item) =>
-        item.id === message.id ? { ...item, starred: !item.starred } : item,
-      ),
-    }));
-    setSelectedMessageId(null);
-    notify(message.starred ? "Pesan dihapus dari pesan berbintang" : "Pesan ditandai berbintang");
-  };
-
-  const openForward = (message: Message) => {
-    setForwardMessage(message);
-    setForwardTargets([]);
-    setSelectedMessageId(null);
-  };
-
-  const forwardSelectedMessage = () => {
-    if (!forwardMessage || !forwardTargets.length) return;
-    forwardTargets.forEach((chatId) => {
-      appendMessage(chatId, {
-        id: `forward-${Date.now()}-${chatId}`,
-        text: `↗ ${forwardMessage.text}`,
-        from: "me",
-        time: "sekarang",
-        status: "read",
-      });
-    });
-    setForwardMessage(null);
-    notify(`Pesan diteruskan ke ${forwardTargets.length} chat`);
-  };
-
-  const createGroup = () => {
-    const name = groupName.trim();
-    if (!name || groupContacts.length === 0) return;
-    const id = `group-${Date.now()}`;
-    const initials = name
-      .split(" ")
-      .slice(0, 2)
-      .map((word) => word[0])
-      .join("")
-      .toUpperCase();
-    const newGroup: Chat = {
-      id,
-      name,
-      initials: initials || "GR",
-      tone: "mint",
-      preview: "Kamu membuat grup",
-      time: "sekarang",
-      unread: 0,
-      isGroup: true,
-      members: groupContacts.length + 1,
-      pinned: false,
-    };
-    setChats((current) => [newGroup, ...current]);
-    setMessagesByChat((current) => ({
-      ...current,
-      [id]: [{ id: `system-${id}`, text: `Kamu membuat grup “${name}”`, from: "them", time: "sekarang" }],
-    }));
-    setActiveChatId(id);
-    setMobileShowChat(true);
-    setGroupOpen(false);
-    setGroupName("");
-    setGroupContacts(["rani"]);
-    notify(`Grup “${name}” berhasil dibuat`);
-  };
-
-  const toggleGroupContact = (contactId: string) => {
-    setGroupContacts((current) =>
-      current.includes(contactId) ? current.filter((id) => id !== contactId) : [...current, contactId],
-    );
-  };
-
-  const insertEmoji = (emoji: string) => setComposer((current) => `${current}${emoji}`);
 
   return (
-    <main className="page-shell">
-      <div className="ambient ambient-one" />
-      <div className="ambient ambient-two" />
-      <section className="app-shell" aria-label="Whisp chat workspace">
-        <aside className={`sidebar ${mobileShowChat ? "mobile-hidden" : ""}`}>
-          <div className="sidebar-topline">
-            <div className="brand-lockup">
-              <div className="brand-mark"><span /></div>
-              <div>
-                <div className="brand-name">whisp</div>
-                <div className="brand-caption">private workspace</div>
-              </div>
-            </div>
-            <div className="sidebar-actions">
-              <button className="icon-button subtle" title="Pesan baru" onClick={() => setNewChatOpen((open) => !open)}>
-                <SquarePen size={18} />
-              </button>
-              <button className="icon-button subtle" title="Buat grup" onClick={() => setGroupOpen(true)}>
-                <UsersRound size={18} />
-              </button>
-              <button className="icon-button subtle" title="Menu profil" onClick={(event) => { event.stopPropagation(); setProfileMenuOpen((open) => !open); }}>
-                <MoreVertical size={18} />
-              </button>
-              {profileMenuOpen && (
-                <div className="floating-menu profile-menu" onClick={(event) => event.stopPropagation()}>
-                  <button onClick={() => notify("Profil lokal siap diedit", "info")}><div className="menu-icon"><Settings size={16} /></div>Pengaturan</button>
-                  <button onClick={() => notify("Pesan berbintang akan hadir di sini", "info")}><div className="menu-icon"><Star size={16} /></div>Pesan berbintang</button>
-                  <button onClick={() => notify("Semua chat sudah tersimpan lokal", "info")}><div className="menu-icon"><Archive size={16} /></div>Arsip</button>
-                </div>
-              )}
-              {newChatOpen && (
-                <div className="floating-menu new-chat-menu" onClick={(event) => event.stopPropagation()}>
-                  <button onClick={() => { setGroupOpen(true); setNewChatOpen(false); }}><div className="menu-icon"><UsersRound size={16} /></div>Grup baru</button>
-                  <button onClick={() => { notify("Pilih kontak dari daftar chat untuk memulai pesan", "info"); setNewChatOpen(false); }}><div className="menu-icon"><UserPlus size={16} /></div>Kontak baru</button>
-                  <button onClick={() => { notify("Pesan tersimpan siap digunakan", "info"); setNewChatOpen(false); }}><div className="menu-icon"><Star size={16} /></div>Pesan tersimpan</button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="profile-strip">
-            <div className="avatar avatar-mint large">N</div>
-            <div className="profile-copy">
-              <strong>Naya Maheswari</strong>
-              <span><span className="online-dot" /> tersedia</span>
-            </div>
-            <button className="mini-status" title="Status aktif"><span /> online</button>
-          </div>
-
-          <div className="search-field">
-            <Search size={17} />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari chat atau kontak" aria-label="Cari chat" />
-            {query && <button className="clear-search" onClick={() => setQuery("")}><X size={14} /></button>}
-            <kbd>⌘ K</kbd>
-          </div>
-
-          <div className="filter-tabs" role="tablist" aria-label="Filter chat">
-            <button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>Semua</button>
-            <button className={filter === "unread" ? "active" : ""} onClick={() => setFilter("unread")}>Belum dibaca {chats.filter((chat) => chat.unread > 0).length > 0 && <span>{chats.filter((chat) => chat.unread > 0).length}</span>}</button>
-            <button className={filter === "groups" ? "active" : ""} onClick={() => setFilter("groups")}>Grup</button>
-          </div>
-
-          <div className="chat-list" aria-label="Daftar chat">
-            {visibleChats.length ? visibleChats.map((chat) => (
-              <button key={chat.id} className={`chat-row ${activeChatId === chat.id ? "selected" : ""}`} onClick={() => selectChat(chat.id)}>
-                <div className={`avatar avatar-${chat.tone}`}>{chat.initials}</div>
-                <div className="chat-row-copy">
-                  <div className="chat-row-head">
-                    <strong>{chat.name}</strong>
-                    <time>{chat.time}</time>
-                  </div>
-                  <div className="chat-row-foot">
-                    <span className="chat-preview">{chat.preview}</span>
-                    <span className="chat-meta">
-                      {chat.pinned && <Pin size={12} fill="currentColor" />}
-                      {chat.muted && <BellOff size={12} />}
-                      {chat.unread > 0 && <b>{chat.unread}</b>}
-                    </span>
-                  </div>
-                </div>
-              </button>
-            )) : (
-              <div className="empty-list"><Search size={18} /><span>Tidak ada chat yang cocok</span></div>
-            )}
-          </div>
-
-          <div className="sidebar-footer">
-            <div className="encrypted-note"><LockKeyhole size={13} /> Semua chat disimpan lokal di perangkat ini</div>
-            <div className="sidebar-bottom-nav">
-              <button onClick={() => notify("Notifikasi telah disenyapkan sementara", "info")}><BellOff size={15} />Senyap</button>
-              <button onClick={() => notify("Bantuan Whisp dibuka", "info")}><CircleHelp size={15} />Bantuan</button>
-            </div>
-          </div>
-        </aside>
-
-        <section className={`chat-area ${mobileShowChat ? "" : "mobile-hidden"}`}>
-          <header className="chat-header">
-            <div className="chat-header-identity">
-              <button className="mobile-back icon-button subtle" onClick={() => setMobileShowChat(false)} title="Kembali ke chat"><ArrowLeft size={19} /></button>
-              <div className={`avatar avatar-${activeChat.tone}`}>{activeChat.initials}</div>
-              <div className="chat-header-copy">
-                <div className="chat-title-row"><h1>{activeChat.name}</h1>{activeChat.pinned && <Pin size={13} fill="currentColor" />}</div>
-                <span>{activeChat.isGroup ? `${activeChat.members} anggota · aktif hari ini` : activeChat.online ? "online sekarang" : "terakhir dilihat baru-baru ini"}</span>
-              </div>
-            </div>
-            <div className="chat-header-actions">
-              {searchOpen && <input autoFocus className="conversation-search" value={conversationSearch} onChange={(event) => setConversationSearch(event.target.value)} placeholder="Cari di chat" />}
-              <button className={`icon-button ${searchOpen ? "active" : ""}`} onClick={() => setSearchOpen((open) => !open)} title="Cari pesan"><Search size={18} /></button>
-              <button className="icon-button" onClick={() => notify("Panggilan suara belum terhubung di mode lokal", "info")} title="Panggilan suara"><Phone size={18} /></button>
-              <button className="icon-button" onClick={() => notify("Panggilan video belum terhubung di mode lokal", "info")} title="Panggilan video"><Video size={18} /></button>
-              <button className="icon-button" onClick={() => setInfoOpen((open) => !open)} title="Info chat"><Info size={18} /></button>
-              <button className="icon-button" onClick={(event) => { event.stopPropagation(); setChatMenuOpen((open) => !open); }} title="Menu chat"><MoreVertical size={18} /></button>
-              {chatMenuOpen && (
-                <div className="floating-menu chat-menu" onClick={(event) => event.stopPropagation()}>
-                  <button onClick={() => { setChats((current) => current.map((chat) => chat.id === activeChatId ? { ...chat, muted: !chat.muted } : chat)); setChatMenuOpen(false); notify(activeChat.muted ? "Notifikasi chat dinyalakan" : "Notifikasi chat disenyapkan", "info"); }}><div className="menu-icon"><BellOff size={16} /></div>{activeChat.muted ? "Nyalakan notifikasi" : "Senyapkan notifikasi"}</button>
-                  <button onClick={() => { setChats((current) => current.map((chat) => chat.id === activeChatId ? { ...chat, pinned: !chat.pinned } : chat)); setChatMenuOpen(false); notify(activeChat.pinned ? "Chat dilepas dari atas" : "Chat dipin di atas"); }}><div className="menu-icon"><Pin size={16} /></div>{activeChat.pinned ? "Lepas pin chat" : "Pin chat"}</button>
-                  <button onClick={() => { setChats((current) => current.map((chat) => chat.id === activeChatId ? { ...chat, unread: 1 } : chat)); setChatMenuOpen(false); notify("Chat ditandai belum dibaca", "info"); }}><div className="menu-icon"><Check size={16} /></div>Tandai belum dibaca</button>
-                  <button onClick={() => { setChatMenuOpen(false); notify("Riwayat chat tetap aman di perangkat ini", "info"); }}><div className="menu-icon"><Archive size={16} /></div>Arsipkan chat</button>
-                </div>
-              )}
-            </div>
-          </header>
-
-          {searchOpen && conversationSearch && <div className="search-result-note"><Search size={14} /> {shownMessages.length} hasil di chat ini <button onClick={() => setConversationSearch("")}><X size={13} /></button></div>}
-
-          <div className="conversation" ref={conversationRef}>
-            <div className="encryption-banner"><ShieldCheck size={15} /><span>Pesan dan panggilan terenkripsi secara end-to-end</span><ChevronDown size={14} /></div>
-            <div className="date-chip">HARI INI</div>
-            <div className="message-stack">
-              {shownMessages.map((message) => (
-                <div key={message.id} className={`message-line ${message.from === "me" ? "outgoing" : "incoming"}`}>
-                  <div
-                    className={`message-bubble ${message.kind === "file" ? "file-bubble" : ""} ${message.starred ? "starred" : ""}`}
-                    onContextMenu={(event) => { event.preventDefault(); openMessageMenu(message, event.currentTarget.getBoundingClientRect()); }}
-                    onPointerDown={(event) => {
-                      if (event.pointerType === "mouse") return;
-                      longPressTimer.current = window.setTimeout(() => openMessageMenu(message, event.currentTarget.getBoundingClientRect()), 560);
-                    }}
-                    onPointerUp={clearLongPress}
-                    onPointerCancel={clearLongPress}
-                    onPointerLeave={clearLongPress}
-                  >
-                    {message.replyTo && <div className="quoted-message"><span>Balasan kamu</span><p>{message.replyTo}</p></div>}
-                    {message.kind === "file" ? <><div className="file-row"><div className="file-icon"><Mic size={16} /></div><div><strong>Voice message</strong><span>0:18 · 1.2 MB</span></div><button onClick={() => notify("Pemutar suara lokal siap", "info")}><PlayIcon /></button></div></> : <p>{message.text}</p>}
-                    <div className="bubble-meta"><span>{message.time}</span>{message.starred && <Star size={11} fill="currentColor" />}{message.from === "me" && <CheckCheck size={14} className={message.status === "read" ? "read" : ""} />}</div>
-                    <button className="bubble-actions" title="Aksi pesan" onClick={(event) => { event.stopPropagation(); openMessageMenu(message, event.currentTarget.parentElement?.getBoundingClientRect() ?? new DOMRect()); }}><MoreHorizontal size={14} /></button>
-                  </div>
-                </div>
-              ))}
-              <div ref={messagesEndRef} />
-            </div>
-          </div>
-
-          <div className="composer-wrap">
-            {replyTo && <div className="reply-strip"><div><span>Membalas {replyTo.from === "me" ? "pesanmu" : activeChat.name}</span><p>{replyTo.text}</p></div><button onClick={() => setReplyTo(null)}><X size={16} /></button></div>}
-            {emojiOpen && <div className="emoji-panel" onClick={(event) => event.stopPropagation()}><div className="emoji-panel-title">Emoji</div><div className="emoji-grid">{["😀", "😄", "🥹", "😉", "😍", "🤍", "✨", "🔥", "👍", "🙏", "🎉", "💡", "🌿", "🫶", "😂", "🤝"].map((emoji) => <button key={emoji} onClick={() => insertEmoji(emoji)}>{emoji}</button>)}</div></div>}
-            {attachmentOpen && <div className="attachment-panel" onClick={(event) => event.stopPropagation()}><button onClick={() => { notify("Pilih foto dari perangkat", "info"); setAttachmentOpen(false); }}><span className="attach-color image"><ImageIcon size={17} /></span><b>Foto & video</b></button><button onClick={() => { notify("Pilih dokumen dari perangkat", "info"); setAttachmentOpen(false); }}><span className="attach-color file"><FileText size={17} /></span><b>Dokumen</b></button><button onClick={() => { notify("Kontak siap dibagikan", "info"); setAttachmentOpen(false); }}><span className="attach-color contact"><UsersRound size={17} /></span><b>Kontak</b></button><button onClick={() => { notify("Lokasi akan tersedia setelah izin diberikan", "info"); setAttachmentOpen(false); }}><span className="attach-color link"><Link2 size={17} /></span><b>Lokasi / tautan</b></button></div>}
-            <div className="composer-bar">
-              <button className={`composer-icon ${emojiOpen ? "active" : ""}`} onClick={(event) => { event.stopPropagation(); setEmojiOpen((open) => !open); setAttachmentOpen(false); }} title="Emoji"><Smile size={21} /></button>
-              <button className={`composer-icon ${attachmentOpen ? "active" : ""}`} onClick={(event) => { event.stopPropagation(); setAttachmentOpen((open) => !open); setEmojiOpen(false); }} title="Lampiran"><Paperclip size={20} /></button>
-              <textarea value={composer} onChange={(event) => setComposer(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendMessage(); } }} placeholder="Tulis pesan" rows={1} aria-label="Tulis pesan" />
-              <button className={`send-button ${composer.trim() ? "ready" : ""}`} onClick={composer.trim() ? sendMessage : () => notify("Tahan tombol mikrofon untuk merekam", "info")} title={composer.trim() ? "Kirim pesan" : "Rekam voice message"}>{composer.trim() ? <Send size={18} /> : <Mic size={20} />}</button>
-            </div>
-            <div className="composer-hint"><LockKeyhole size={12} /> Tekan Enter untuk mengirim <span>•</span> Shift + Enter untuk baris baru</div>
-          </div>
-        </section>
-
-        {infoOpen && (
-          <aside className="info-panel">
-            <div className="info-header"><strong>Info chat</strong><button className="icon-button subtle" onClick={() => setInfoOpen(false)}><X size={18} /></button></div>
-            <div className={`avatar avatar-${activeChat.tone} info-avatar`}>{activeChat.initials}</div>
-            <h2>{activeChat.name}</h2>
-            <p className="info-subtitle">{activeChat.isGroup ? `${activeChat.members} anggota` : "+62 812 3456 7890"}</p>
-            <div className="info-actions"><button onClick={() => notify("Notifikasi chat diperbarui", "info")}><BellOff size={17} />Senyap</button><button onClick={() => notify("Chat dipin di atas", "info")}><Pin size={17} />Pin</button><button onClick={() => notify("Pencarian chat aktif", "info")}><Search size={17} />Cari</button></div>
-            <div className="info-section"><span className="section-label">Tentang</span><p>{activeChat.isGroup ? "Ruang kecil untuk ide-ide yang tumbuh bersama." : "Available for a good conversation."}</p></div>
-            <div className="info-section"><span className="section-label">Media, link, dan dokumen</span><button className="media-preview" onClick={() => notify("Belum ada media lain di mockup ini", "info")}><div className="media-thumb"><ImageIcon size={18} /></div><div><strong>Media & file</strong><span>0 item</span></div><ChevronDown size={16} /></button></div>
-            <div className="info-section"><span className="section-label">Pengaturan chat</span><button className="info-setting" onClick={() => setSoundOn((value) => !value)}><span className="setting-icon"><BellOff size={15} /></span><div><strong>Notifikasi</strong><span>{soundOn ? "Aktif" : "Disenyapkan"}</span></div><div className={`toggle ${soundOn ? "on" : ""}`}><span /></div></button><button className="info-setting" onClick={() => notify("Wallpaper custom bisa dipilih nanti", "info")}><span className="setting-icon"><ImageIcon size={15} /></span><div><strong>Wallpaper chat</strong><span>Whisp dark grain</span></div><ChevronDown size={16} /></button></div>
-            <div className="info-footer"><ShieldCheck size={14} /> Pesan terenkripsi end-to-end</div>
+    <main className="workforce-shell">
+      <div className="wf-glow glow-left" />
+      <div className="wf-glow glow-right" />
+      <section className="workforce-app">
+        <header className="topbar">
+          <div className="topbar-brand"><div className="wf-logo"><span /></div><div><strong>whisp</strong><small>AI workforce platform</small></div></div>
+          <div className="topbar-context"><span className="context-dot" />NAYA / <b>PERSONAL COMPANY</b><ChevronDown size={13} /></div>
+          <div className="topbar-actions"><div className="live-pill"><span /> all systems nominal</div><button className="top-icon" title="Search"><Search size={17} /></button><button className="top-icon" title="Settings" onClick={() => notify("Workspace settings ready for configuration", "info")}><Settings2 size={17} /></button><div className="user-chip" onClick={() => isAuthenticated ? notify(`${user?.name ?? "Account"} is signed in`, "info") : startLogin()}><span>{isAuthenticated ? (user?.name?.[0] ?? "N") : "N"}</span><ChevronDown size={12} /></div></div>
+        </header>
+        <div className="wf-layout">
+          <aside className={`wf-sidebar ${showSidebar ? "" : "collapsed"}`}>
+            <button className="collapse-button" onClick={() => setShowSidebar((value) => !value)}><Menu size={16} /></button>
+            <div className="sidebar-label">COMMAND CENTER</div>
+            <nav className="wf-nav">
+              {[{ id: "command", label: "Command Center", icon: Command }, { id: "agents", label: "AI Workforce", icon: UsersRound }, { id: "departments", label: "Departments", icon: LayoutGrid }, { id: "workflows", label: "Workflows", icon: Workflow }, { id: "memory", label: "Memory & Knowledge", icon: BrainCircuit }].map(({ id, label, icon: Icon }) => <button key={id} className={activeNav === id ? "active" : ""} onClick={() => setActiveNav(id)}><Icon size={16} /><span>{label}</span>{id === "workflows" && <b className="nav-badge">2</b>}</button>)}
+            </nav>
+            <div className="sidebar-label second">WORKSPACE</div>
+            <nav className="wf-nav secondary"><button onClick={() => notify("Knowledge source manager opened", "info")}><Database size={16} /><span>Knowledge sources</span></button><button onClick={() => notify("Permission matrix opened", "info")}><ShieldCheck size={16} /><span>Permissions</span></button><button onClick={() => notify("Audit log is ready to inspect", "info")}><Fingerprint size={16} /><span>Audit log</span></button></nav>
+            <div className="sidebar-bottom"><div className="security-card"><div className="security-icon"><LockKeyhole size={15} /></div><div><strong>Private by design</strong><span>RBAC · approval gates · audit trail</span></div></div><button className="workspace-switcher" onClick={() => notify("Workspace switcher opened", "info")}><div className="mini-orb">P</div><div><strong>Personal Company</strong><span>1 workspace</span></div><MoreHorizontal size={15} /></button></div>
           </aside>
-        )}
+
+          <section className="wf-content">
+            <div className="page-heading"><div><div className="eyebrow"><Sparkles size={13} /> YOUR DIGITAL COMPANY</div><h1>{activeNav === "command" ? "Good morning, Naya." : activeNav === "agents" ? "Your AI workforce." : activeNav === "departments" ? "Departments with purpose." : activeNav === "workflows" ? "Work that runs itself." : "A company that remembers."}</h1><p>{activeNav === "command" ? "Your Right Hand is coordinating the moving pieces." : "Shape the operating system behind your AI workforce."}</p></div><div className="heading-actions"><button className="outline-button" onClick={() => notify("Workspace health is nominal", "info")}><Activity size={15} />Health <span className="health-dot" /></button>{activeNav === "agents" && <button className="primary-button" onClick={() => setShowAgentModal(true)}><Plus size={16} />Add agent</button>}</div></div>
+
+            {activeNav === "command" && <CommandCenter messages={messages} prompt={prompt} setPrompt={setPrompt} sendPrompt={sendPrompt} activeAgent={activeAgent} setActiveAgentId={setActiveAgentId} filteredAgents={filteredAgents} agentSearch={agentSearch} setAgentSearch={setAgentSearch} selectedDepartment={selectedDepartment} setSelectedDepartment={setSelectedDepartment} showInfo={showInfo} setShowInfo={setShowInfo} isAuthenticated={isAuthenticated} planPending={planMutation.isPending} />}
+            {activeNav === "agents" && <AgentsView agents={agents} filteredAgents={filteredAgents} agentSearch={agentSearch} setAgentSearch={setAgentSearch} setActiveAgentId={setActiveAgentId} setActiveNav={setActiveNav} />}
+            {activeNav === "departments" && <DepartmentsView setActiveNav={setActiveNav} />}
+            {activeNav === "workflows" && <WorkflowsView />}
+            {activeNav === "memory" && <MemoryView />}
+          </section>
+        </div>
       </section>
-
-      {selectedMessageId && (() => {
-        const selectedMessage = activeMessages.find((message) => message.id === selectedMessageId);
-        if (!selectedMessage) return null;
-        return <div className="message-menu floating-menu" style={{ top: menuPosition.top, left: menuPosition.left }} onClick={(event) => event.stopPropagation()}>
-          <button onClick={() => { setReplyTo(selectedMessage); setSelectedMessageId(null); }}><div className="menu-icon"><ArrowLeft size={16} /></div>Balas</button>
-          <button onClick={() => openForward(selectedMessage)}><div className="menu-icon"><Forward size={16} /></div>Teruskan</button>
-          <button onClick={() => copyMessage(selectedMessage)}><div className="menu-icon"><Copy size={16} /></div>Salin</button>
-          <button onClick={() => toggleStar(selectedMessage)}><div className="menu-icon"><Star size={16} /></div>{selectedMessage.starred ? "Hapus bintang" : "Bintangi pesan"}</button>
-          <button onClick={() => deleteMessage(selectedMessage)} className="danger"><div className="menu-icon"><Trash2 size={16} /></div>Hapus</button>
-        </div>;
-      })()}
-
-      {forwardMessage && (
-        <div className="modal-backdrop" onClick={() => setForwardMessage(null)}>
-          <div className="modal forward-modal" onClick={(event) => event.stopPropagation()}>
-            <div className="modal-head"><div><span className="eyebrow">ACTION</span><h2>Teruskan pesan</h2></div><button className="icon-button subtle" onClick={() => setForwardMessage(null)}><X size={18} /></button></div>
-            <div className="forward-preview"><Forward size={15} /><span>{forwardMessage.text}</span></div>
-            <p className="modal-description">Pilih chat tujuan. Pesan akan diteruskan sebagai pesan baru.</p>
-            <div className="forward-list">{chats.filter((chat) => chat.id !== activeChatId).map((chat) => <button className={`forward-row ${forwardTargets.includes(chat.id) ? "picked" : ""}`} key={chat.id} onClick={() => setForwardTargets((current) => current.includes(chat.id) ? current.filter((id) => id !== chat.id) : [...current, chat.id])}><div className={`avatar avatar-${chat.tone} small`}>{chat.initials}</div><div><strong>{chat.name}</strong><span>{chat.isGroup ? `${chat.members} anggota` : "chat pribadi"}</span></div><div className="selection-check">{forwardTargets.includes(chat.id) && <Check size={15} />}</div></button>)}</div>
-            <div className="modal-actions"><button className="secondary-button" onClick={() => setForwardMessage(null)}>Batal</button><button className="primary-button" disabled={!forwardTargets.length} onClick={forwardSelectedMessage}><Forward size={16} />Teruskan {forwardTargets.length ? `(${forwardTargets.length})` : ""}</button></div>
-          </div>
-        </div>
-      )}
-
-      {groupOpen && (
-        <div className="modal-backdrop" onClick={() => setGroupOpen(false)}>
-          <div className="modal group-modal" onClick={(event) => event.stopPropagation()}>
-            <div className="modal-head"><div><span className="eyebrow">NEW SPACE</span><h2>Buat grup baru</h2></div><button className="icon-button subtle" onClick={() => setGroupOpen(false)}><X size={18} /></button></div>
-            <div className="group-name-input"><div className="avatar avatar-mint group-avatar"><Group size={20} /></div><input autoFocus value={groupName} onChange={(event) => setGroupName(event.target.value)} placeholder="Nama grup" /></div>
-            <div className="modal-section-title"><span>Pilih anggota</span><small>{groupContacts.length} dipilih</small></div>
-            <div className="contact-list">{contactOptions.map((contact) => <button key={contact.id} className={`contact-row ${groupContacts.includes(contact.id) ? "picked" : ""}`} onClick={() => toggleGroupContact(contact.id)}><div className={`avatar avatar-${contact.tone} small`}>{contact.initials}</div><div><strong>{contact.name}</strong><span>tersedia untuk ditambahkan</span></div><div className="selection-check">{groupContacts.includes(contact.id) && <Check size={15} />}</div></button>)}</div>
-            <div className="modal-actions"><button className="secondary-button" onClick={() => setGroupOpen(false)}>Batal</button><button className="primary-button" disabled={!groupName.trim() || !groupContacts.length} onClick={createGroup}><UsersRound size={16} />Buat grup</button></div>
-          </div>
-        </div>
-      )}
-
-      {toast && <div className={`toast toast-${toast.kind}`}><div className="toast-check">{toast.kind === "success" ? <Check size={15} /> : <Info size={15} />}</div><span>{toast.message}</span></div>}
+      {showAgentModal && <div className="modal-layer" onClick={() => setShowAgentModal(false)}><div className="wf-modal" onClick={(event) => event.stopPropagation()}><div className="modal-title"><div><span className="eyebrow">WORKFORCE BUILDER</span><h2>Create an agent</h2></div><button className="top-icon" onClick={() => setShowAgentModal(false)}><X size={18} /></button></div><p>Start with an identity. Ari will help you configure its role, memory, tools, and permission boundaries.</p><label>Agent name<input autoFocus value={newAgentName} onChange={(event) => setNewAgentName(event.target.value)} placeholder="e.g. Atlas Research" /></label><div className="agent-draft-grid"><div><span>Default model</span><b>Auto · Right Hand selects</b></div><div><span>Permission profile</span><b>Restricted · approval required</b></div></div><div className="modal-actions"><button className="outline-button" onClick={() => setShowAgentModal(false)}>Cancel</button><button className="primary-button" disabled={!newAgentName.trim()} onClick={addAgent}><Bot size={15} />Create draft</button></div></div></div>}
+      {toast && <div className={`wf-toast ${toast.tone}`}><span>{toast.tone === "success" ? <Check size={14} /> : <Sparkles size={14} />}</span>{toast.text}</div>}
+      {loading && <div className="loading-indicator"><RefreshCw size={13} /> connecting secure workspace</div>}
     </main>
   );
 }
 
-function PlayIcon() {
-  return <span className="play-icon">▶</span>;
+function CommandCenter({ messages, prompt, setPrompt, sendPrompt, activeAgent, setActiveAgentId, filteredAgents, agentSearch, setAgentSearch, selectedDepartment, setSelectedDepartment, showInfo, setShowInfo, isAuthenticated, planPending }: { messages: WorkforceMessage[]; prompt: string; setPrompt: (value: string) => void; sendPrompt: () => void; activeAgent: Agent; setActiveAgentId: (id: string) => void; filteredAgents: Agent[]; agentSearch: string; setAgentSearch: (value: string) => void; selectedDepartment: string; setSelectedDepartment: (value: string) => void; showInfo: boolean; setShowInfo: (value: boolean) => void; isAuthenticated: boolean; planPending: boolean }) {
+  return <div className="command-grid">
+    <aside className="people-rail"><div className="rail-heading"><div><span className="section-kicker">AI CONTACTS</span><strong>Workforce</strong></div><button className="small-plus" title="Add agent"><Plus size={15} /></button></div><div className="rail-search"><Search size={14} /><input value={agentSearch} onChange={(event) => setAgentSearch(event.target.value)} placeholder="Find an agent" /></div><div className="rail-filters"><button className={selectedDepartment === "all" ? "active" : ""} onClick={() => setSelectedDepartment("all")}>All</button><button className={selectedDepartment === "Executive Office" ? "active" : ""} onClick={() => setSelectedDepartment("Executive Office")}>Core</button><button className={selectedDepartment === "Growth & Marketing" ? "active" : ""} onClick={() => setSelectedDepartment("Growth & Marketing")}>Growth</button></div><div className="people-list">{filteredAgents.map((agent) => <button className={`person-row ${activeAgent.id === agent.id ? "selected" : ""}`} key={agent.id} onClick={() => setActiveAgentId(agent.id)}><div className={avatarClass(agent.accent)}>{agent.avatar}<span className={`presence ${agent.status}`} /></div><div><strong>{agent.name}</strong><span>{agent.role}</span><small>{agent.last}</small></div>{agent.status === "working" && <CircleDot size={13} className="working-icon" />}</button>)}</div><div className="rail-footer"><div><span>WORKFORCE CAPACITY</span><strong>68%</strong></div><div className="capacity"><span style={{ width: "68%" }} /></div><small>6 agents · 4 departments · 3 active workflows</small></div></aside>
+    <section className="right-hand-chat"><div className="chat-top"><div className="chat-identity"><div className={avatarClass(activeAgent.accent)}>{activeAgent.avatar}<span className={`presence ${activeAgent.status}`} /></div><div><strong>{activeAgent.name}</strong><span>{activeAgent.role}</span></div></div><div className="chat-top-actions"><span className="mode-tag"><Network size={12} /> orchestrated</span><button className="top-icon"><Search size={16} /></button><button className="top-icon"><MoreHorizontal size={16} /></button></div></div><div className="chat-body"><div className="secure-note"><ShieldCheck size={13} /> agent communication is permission-aware and auditable</div><div className="day-marker">TODAY · TUESDAY, SEPTEMBER 8</div>{messages.map((message) => <div className={`wf-message ${message.from === "user" ? "from-user" : ""} ${message.kind === "plan" ? "is-plan" : ""}`} key={message.id}><div className="message-label"><span>{message.sender}</span><time>{message.time}</time></div><div className="message-card">{message.kind === "plan" && <div className="plan-header"><div><Zap size={14} /><strong>Execution plan ready</strong></div><span>LangGraph state · queued</span></div>}<p>{message.body}</p>{message.kind === "plan" && <div className="plan-steps"><span><CheckCircle2 size={13} /> Route agents</span><span><CheckCircle2 size={13} /> Write memory</span><span><Clock3 size={13} /> Approval gate</span></div>}{message.from === "system" && <div className="signal-bar"><Activity size={13} /> live workforce signal <ArrowUpRight size={13} /></div>}</div></div>)}{planPending && <div className="thinking-row"><div className="thinking-dots"><span /><span /><span /></div><span>Ari is planning across the workforce…</span></div>}</div><div className="prompt-dock"><div className="prompt-suggestions"><button onClick={() => setPrompt("Prepare a concise Q2 growth plan with research, owners, and risks")}>Prepare a growth plan</button><button onClick={() => setPrompt("Find the most important decision I should make this week")}>What needs my attention?</button></div><div className="prompt-box"><Sparkles size={17} className="prompt-spark" /><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendPrompt(); } }} placeholder="Tell your company what to do next…" rows={1} /><button className={prompt.trim() ? "send-ready" : ""} onClick={sendPrompt} title={isAuthenticated ? "Run with Right Hand" : "Try demo plan"}>{planPending ? <RefreshCw size={17} className="spin" /> : <Send size={17} />}</button></div><div className="prompt-hint"><LockKeyhole size={11} /> {isAuthenticated ? "Live orchestration enabled" : "Demo mode · sign in to enable live orchestration"}<span>•</span> Enter to send</div></div></section>
+    {showInfo && <aside className="operating-panel"><div className="panel-heading"><div><span className="section-kicker">OPERATING SYSTEM</span><strong>Live overview</strong></div><button className="top-icon" onClick={() => setShowInfo(false)}><X size={15} /></button></div><div className="pulse-card"><div className="pulse-orb"><div className="pulse-ring ring-a" /><div className="pulse-ring ring-b" /><BrainCircuit size={22} /></div><div><span>RIGHT HAND PULSE</span><strong>Everything is moving</strong><small>Last coordination · 2 min ago</small></div></div><div className="metric-grid"><div><span>Agents online</span><strong>3 <small>/ 6</small></strong><em>+1 this hour</em></div><div><span>Active workflows</span><strong>12</strong><em>2 need you</em></div><div><span>Memory health</span><strong>94%</strong><em>Syncing well</em></div><div><span>Tasks completed</span><strong>48</strong><em>This week</em></div></div><div className="panel-section"><div className="section-title"><span>Approval queue</span><b>2 pending</b></div><div className="approval-item"><div className="approval-icon amber"><Globe2 size={14} /></div><div><strong>Send campaign to 2,184 leads</strong><span>Mira · Growth & Marketing</span></div><button className="arrow-button"><ArrowUpRight size={14} /></button></div><div className="approval-item"><div className="approval-icon coral"><BriefcaseBusiness size={14} /></div><div><strong>Approve Q2 operating budget</strong><span>Sora · Finance & Operations</span></div><button className="arrow-button"><ArrowUpRight size={14} /></button></div></div><div className="panel-section"><div className="section-title"><span>Recent activity</span><button className="text-button">View all</button></div><div className="activity-line"><div className="activity-dot mint" /><div><strong>Mira updated launch narrative</strong><span>2 min ago · Growth</span></div></div><div className="activity-line"><div className="activity-dot blue" /><div><strong>Elio added 3 product insights</strong><span>19 min ago · Product</span></div></div><div className="activity-line"><div className="activity-dot violet" /><div><strong>Ari wrote a new preference</strong><span>1 hr ago · Memory</span></div></div></div><button className="close-panel" onClick={() => setShowInfo(false)}>Hide live overview <ChevronDown size={13} /></button></aside>}
+  </div>;
+}
+
+function AgentsView({ agents, filteredAgents, agentSearch, setAgentSearch, setActiveAgentId, setActiveNav }: { agents: Agent[]; filteredAgents: Agent[]; agentSearch: string; setAgentSearch: (value: string) => void; setActiveAgentId: (id: string) => void; setActiveNav: (value: string) => void }) {
+  return <div className="directory-view"><div className="directory-toolbar"><div className="toolbar-search"><Search size={15} /><input value={agentSearch} onChange={(event) => setAgentSearch(event.target.value)} placeholder="Search roles, expertise, or departments" /></div><div className="toolbar-meta"><span>Showing {filteredAgents.length} of {agents.length}</span><button className="outline-button"><Archive size={14} />Filters</button></div></div><div className="agent-grid">{filteredAgents.map((agent) => <button className="agent-card" key={agent.id} onClick={() => { setActiveAgentId(agent.id); setActiveNav("command"); }}><div className="agent-card-top"><div className={avatarClass(agent.accent)}>{agent.avatar}<span className={`presence ${agent.status}`} /></div><span className={`status-tag ${agent.status}`}>{agent.status}</span></div><div className="agent-card-copy"><h3>{agent.name}</h3><p>{agent.role}</p><span className="agent-dept"><FolderKanban size={12} />{agent.dept}</span></div><div className="expertise-list">{agent.expertise.map((skill) => <span key={skill}>{skill}</span>)}</div><div className="agent-card-footer"><span><BrainCircuit size={12} /> memory linked</span><ArrowUpRight size={15} /></div></button>)}</div></div>;
+}
+
+function DepartmentsView({ setActiveNav }: { setActiveNav: (value: string) => void }) {
+  return <div className="directory-view"><div className="dept-summary"><div><span className="section-kicker">ORGANIZATIONAL DESIGN</span><h2>Each department has a mission.</h2><p>Ari can create, staff, and reconfigure departments as your goals change.</p></div><button className="primary-button" onClick={() => setActiveNav("agents")}><Plus size={15} />Add department</button></div><div className="department-grid">{departmentSeed.map((dept) => <button className="department-card" key={dept.id} onClick={() => setActiveNav("agents")}><div className={`dept-mark ${dept.color}`}><Network size={18} /></div><div className="department-card-copy"><span>{dept.count} AI agents</span><h3>{dept.name}</h3><p>{dept.purpose}</p></div><div className="dept-footer"><span>{dept.trend}</span><ArrowUpRight size={15} /></div></button>)}</div><div className="architecture-card"><div className="arch-copy"><span className="section-kicker">AUTONOMOUS ORGANIZATION</span><h2>One Right Hand. Many specialized minds.</h2><p>Every agent inherits workspace guardrails, then adds its own role, memory, tools, and permission boundary. Collaboration happens in context — not in a maze of disconnected bots.</p></div><div className="arch-orbit"><div className="orbit orbit-one" /><div className="orbit orbit-two" /><div className="orbit-core"><BrainCircuit size={23} /><span>Ari</span></div><div className="orbit-node node-a">M</div><div className="orbit-node node-b">E</div><div className="orbit-node node-c">N</div></div></div></div>;
+}
+
+function WorkflowsView() {
+  return <div className="directory-view"><div className="workflow-summary"><div><span className="section-kicker">AUTOMATION LAYER</span><h2>Workflows that keep moving.</h2><p>LangGraph state, approval gates, durable runs, and visible handoffs — all in one operating view.</p></div><button className="primary-button"><Plus size={15} />New workflow</button></div><div className="workflow-list">{workflowSeed.map((flow) => { const Icon = flow.icon; return <div className="workflow-card" key={flow.name}><div className={`workflow-icon ${flow.color}`}><Icon size={18} /></div><div className="workflow-copy"><div className="workflow-title"><h3>{flow.name}</h3><span className={`workflow-status ${flow.status.toLowerCase().replace(" ", "-")}`}>{flow.status}</span></div><p>Owned by {flow.owner} · next checkpoint {flow.next}</p><div className="progress-track"><span style={{ width: `${flow.progress}%` }} /></div></div><div className="workflow-percent">{flow.progress}%<small>complete</small></div><button className="top-icon"><MoreHorizontal size={16} /></button></div>; })}</div><div className="workflow-architecture"><div className="workflow-arch-head"><div><span className="section-kicker">GRAPH RUNTIME</span><h3>Planning → routing → approval → execution</h3></div><span className="runtime-chip"><GitBranch size={13} /> LangGraph foundation</span></div><div className="flow-steps"><div className="flow-step done"><span>01</span><strong>Understand</strong><small>Intent + context</small></div><div className="flow-connector active" /><div className="flow-step done"><span>02</span><strong>Route</strong><small>Best-fit agents</small></div><div className="flow-connector active" /><div className="flow-step waiting"><span>03</span><strong>Approval gate</strong><small>Human when needed</small></div><div className="flow-connector" /><div className="flow-step"><span>04</span><strong>Execute</strong><small>Tools + memory</small></div><div className="flow-connector" /><div className="flow-step"><span>05</span><strong>Audit</strong><small>Trace everything</small></div></div></div></div>;
+}
+
+function MemoryView() {
+  return <div className="directory-view"><div className="memory-hero"><div><span className="section-kicker">SHARED INTELLIGENCE</span><h2>Your company remembers what matters.</h2><p>Long-term memory is scoped, attributable, and permission-aware — so every agent knows more without knowing too much.</p></div><div className="memory-score"><span>MEMORY HEALTH</span><strong>94<span>%</span></strong><small>+7% this week</small></div></div><div className="memory-toolbar"><div className="toolbar-search"><Search size={15} /><input placeholder="Search memory, knowledge, and policies" /></div><button className="outline-button"><FileText size={14} />Add knowledge</button></div><div className="memory-list">{memorySeed.map((memory) => <div className="memory-row" key={memory.title}><div className="memory-kind"><BrainCircuit size={15} /></div><div className="memory-copy"><h3>{memory.title}</h3><span>{memory.type} · owned by {memory.agent}</span></div><div className="memory-score-mini"><strong>{memory.score}</strong><span>relevance</span></div><div className="memory-updated">{memory.updated}</div><button className="top-icon"><MoreHorizontal size={16} /></button></div>)}</div><div className="memory-footnote"><LockKeyhole size={14} /> Memory writes follow workspace permissions and are visible in the audit log.</div></div>;
 }
