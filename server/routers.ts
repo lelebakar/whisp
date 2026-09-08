@@ -9,9 +9,12 @@ import {
   createApproval,
   createDepartment,
   createKnowledgeSource,
+  createChatMessage,
+  createConversation,
   createToolRun,
   createWorkflow,
   createWorkflowRun,
+  getChatSnapshot,
   decideApproval,
   ensureBuiltinTools,
   getToolForOwner,
@@ -19,6 +22,7 @@ import {
   getWorkspaceSnapshot,
   listAuditLogs,
   updateAgent,
+  updateChatMessage,
   updateDepartment,
   updateKnowledgeSource,
   updateToolRun,
@@ -160,6 +164,12 @@ export const appRouter = router({
       await writeAudit(ctx.user.id, { action: "right_hand.plan_created", resourceType: "right_hand_plan", outcome: approval ? "pending" : "success", details: { request: input.request, selectedAgents: plan.selectedAgents } });
       return { plan, graphState, approval };
     }),
+  }),
+  chats: router({
+    snapshot: protectedProcedure.query(({ ctx }) => getChatSnapshot(ctx.user.id)),
+    create: protectedProcedure.input(z.object({ name: z.string().min(2).max(180), kind: z.enum(["direct", "group", "right_hand", "workflow"]), description: z.string().max(1000).optional(), agentIds: z.array(z.number().int().positive()).max(100) })).mutation(({ ctx, input }) => createConversation(ctx.user.id, input)),
+    send: protectedProcedure.input(z.object({ conversationId: z.number().int().positive(), content: z.string().min(1).max(30000), agentId: z.number().int().positive().optional(), parentMessageId: z.number().int().positive().optional(), kind: z.enum(["text", "system"]).optional() })).mutation(({ ctx, input }) => createChatMessage(ctx.user.id, input)),
+    updateMessage: protectedProcedure.input(z.object({ id: z.number().int().positive(), content: z.string().min(1).max(30000).optional(), isStarred: z.boolean().optional(), deleted: z.boolean().optional() })).mutation(({ ctx, input }) => updateChatMessage(ctx.user.id, input.id, input)),
   }),
 });
 

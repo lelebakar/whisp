@@ -15,6 +15,13 @@
       "when": 1788832280973,
       "tag": "0001_majestic_leper_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1788834173544,
+      "tag": "0002_friendly_komodo",
+      "breakpoints": true
     }
   ]
 }

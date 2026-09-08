@@ -1,12 +1,16 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   agents,
   approvals,
   auditLogs,
+  conversationParticipants,
+  conversations,
   departments,
   InsertUser,
   knowledgeSources,
+  messageAttachments,
+  messages,
   tools,
   toolRuns,
   users,
@@ -278,4 +282,55 @@ export async function listAuditLogs(ownerId: number) {
   const workspace = await workspaceFor(ownerId);
   if (!db || !workspace) return [];
   return db.select().from(auditLogs).where(eq(auditLogs.workspaceId, workspace.id)).orderBy(desc(auditLogs.createdAt)).limit(60);
+}
+
+export async function getChatSnapshot(ownerId: number) {
+  const db = await getDb();
+  const workspace = await workspaceFor(ownerId);
+  if (!db || !workspace) return null;
+  const chats = await db.select().from(conversations).where(eq(conversations.workspaceId, workspace.id)).orderBy(desc(conversations.updatedAt));
+  const conversationIds = chats.map((chat) => chat.id);
+  const chatMessages = conversationIds.length ? await db.select().from(messages).where(inArray(messages.conversationId, conversationIds)).orderBy(messages.createdAt) : [];
+  const participants = conversationIds.length ? await db.select().from(conversationParticipants).where(inArray(conversationParticipants.conversationId, conversationIds)) : [];
+  return { workspace, chats, messages: chatMessages, participants };
+}
+
+export async function createConversation(ownerId: number, input: { name: string; kind: "direct" | "group" | "right_hand" | "workflow"; description?: string; agentIds: number[] }) {
+  const db = await getDb();
+  const workspace = await workspaceFor(ownerId);
+  if (!db || !workspace) return null;
+  const result = await db.insert(conversations).values({ workspaceId: workspace.id, name: input.name, kind: input.kind, description: input.description ?? null });
+  const id = insertId(result);
+  await db.insert(conversationParticipants).values([{ conversationId: id, userId: ownerId, participantRole: "owner" }, ...input.agentIds.map((agentId) => ({ conversationId: id, agentId, participantRole: "member" as const }))]);
+  await writeAudit(ownerId, { action: "conversation.created", resourceType: "conversation", resourceId: String(id), details: { name: input.name, kind: input.kind } });
+  return (await db.select().from(conversations).where(eq(conversations.id, id)).limit(1))[0] ?? null;
+}
+
+export async function createChatMessage(ownerId: number, input: { conversationId: number; content: string; agentId?: number; parentMessageId?: number; kind?: "text" | "system" }) {
+  const db = await getDb();
+  const workspace = await workspaceFor(ownerId);
+  if (!db || !workspace) return null;
+  const conversation = (await db.select().from(conversations).where(and(eq(conversations.id, input.conversationId), eq(conversations.workspaceId, workspace.id))).limit(1))[0];
+  if (!conversation) return null;
+  const result = await db.insert(messages).values({ conversationId: input.conversationId, senderUserId: input.agentId ? null : ownerId, senderAgentId: input.agentId ?? null, parentMessageId: input.parentMessageId ?? null, content: input.content, kind: input.kind ?? "text", isStarred: false });
+  await db.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, input.conversationId));
+  return (await db.select().from(messages).where(eq(messages.id, insertId(result))).limit(1))[0] ?? null;
+}
+
+export async function updateChatMessage(ownerId: number, id: number, input: { content?: string; isStarred?: boolean; deleted?: boolean }) {
+  const db = await getDb();
+  const workspace = await workspaceFor(ownerId);
+  if (!db || !workspace) return null;
+  const rows = await db.select({ message: messages }).from(messages).innerJoin(conversations, eq(messages.conversationId, conversations.id)).where(and(eq(messages.id, id), eq(conversations.workspaceId, workspace.id))).limit(1);
+  if (!rows[0]) return null;
+  await db.update(messages).set({ content: input.deleted ? "This message was deleted" : input.content, deletedAt: input.deleted ? new Date() : undefined, editedAt: input.content ? new Date() : undefined, isStarred: input.isStarred }).where(eq(messages.id, id));
+  return (await db.select().from(messages).where(eq(messages.id, id)).limit(1))[0] ?? null;
+}
+
+export async function createMessageAttachment(ownerId: number, input: { messageId: number; kind: "file" | "image" | "audio" | "video" | "document"; fileName: string; mimeType: string; fileSize: number; storageKey: string; url: string }) {
+  const db = await getDb();
+  const workspace = await workspaceFor(ownerId);
+  if (!db || !workspace) return null;
+  const result = await db.insert(messageAttachments).values({ ...input, workspaceId: workspace.id });
+  return (await db.select().from(messageAttachments).where(eq(messageAttachments.id, insertId(result))).limit(1))[0] ?? null;
 }

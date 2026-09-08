@@ -11,6 +11,7 @@ import { serveStatic, setupVite } from "./vite";
 import { registerRightHandStreamRoute } from "../workforce/stream";
 import { startWorkforceWorker } from "../workforce/queue";
 import { processWorkflowJob } from "../workforce/worker";
+import { registerChatUploadRoute } from "../workforce/chatUpload";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -40,6 +41,7 @@ async function startServer() {
   registerStorageProxy(app);
   registerOAuthRoutes(app);
   registerRightHandStreamRoute(app);
+  registerChatUploadRoute(app);
   await startWorkforceWorker(processWorkflowJob);
   // tRPC API
   app.use(

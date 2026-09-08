@@ -179,11 +179,27 @@ export const messages = mysqlTable("messages", {
   senderAgentId: int("senderAgentId"),
   senderUserId: int("senderUserId"),
   parentMessageId: int("parentMessageId"),
+  isStarred: boolean("isStarred").default(false).notNull(),
+  editedAt: timestamp("editedAt"),
+  deletedAt: timestamp("deletedAt"),
   kind: mysqlEnum("kind", ["text", "system", "tool_call", "tool_result", "approval_request", "workflow_event"]).default("text").notNull(),
   content: text("content").notNull(),
   metadata: json("metadata").$type<Record<string, unknown>>(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => ({ conversationIdx: index("message_conversation_idx").on(table.conversationId, table.createdAt), parentIdx: index("message_parent_idx").on(table.parentMessageId) }));
+
+export const messageAttachments = mysqlTable("message_attachments", {
+  id: int("id").autoincrement().primaryKey(),
+  messageId: int("messageId").notNull(),
+  workspaceId: int("workspaceId").notNull(),
+  kind: mysqlEnum("kind", ["file", "image", "audio", "video", "document"]).default("file").notNull(),
+  fileName: varchar("fileName", { length: 255 }).notNull(),
+  mimeType: varchar("mimeType", { length: 160 }).notNull(),
+  fileSize: int("fileSize").default(0).notNull(),
+  storageKey: text("storageKey").notNull(),
+  url: text("url").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({ messageIdx: index("attachment_message_idx").on(table.messageId), workspaceIdx: index("attachment_workspace_idx").on(table.workspaceId) }));
 
 export const auditLogs = mysqlTable("audit_logs", {
   id: int("id").autoincrement().primaryKey(),
@@ -221,3 +237,6 @@ export type Workflow = typeof workflows.$inferSelect;
 export type Approval = typeof approvals.$inferSelect;
 export type KnowledgeSource = typeof knowledgeSources.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;
+export type Conversation = typeof conversations.$inferSelect;
+export type Message = typeof messages.$inferSelect;
+export type MessageAttachment = typeof messageAttachments.$inferSelect;
