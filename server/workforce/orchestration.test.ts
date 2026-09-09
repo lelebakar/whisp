@@ -13,7 +13,7 @@ describe("workforce orchestration graph", () => {
       tools: ["workspace_analytics"],
       approvalRequired: false,
     };
-    const state = await runWorkforceGraph("Prepare a weekly executive pulse", plan);
+    const state = await runWorkforceGraph("Prepare a weekly executive pulse", plan, undefined, { durable: false });
     expect(state.status).toBe("ready");
     expect(state.events).toHaveLength(3);
     expect(state.events[1]).toContain("route");
@@ -30,7 +30,7 @@ describe("workforce orchestration graph", () => {
       tools: ["email_sender"],
       approvalRequired: true,
     };
-    const state = await runWorkforceGraph("Send the campaign", plan);
+    const state = await runWorkforceGraph("Send the campaign", plan, undefined, { durable: false });
     expect(state.status).toBe("waiting_approval");
     expect(state.events.at(-1)).toContain("approval gate");
   });

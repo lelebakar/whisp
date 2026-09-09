@@ -1,5 +1,6 @@
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
+import { Pool } from "pg";
 import { ENV } from "../_core/env";
 
 export type WorkforcePlan = {
@@ -52,24 +53,34 @@ function buildWorkforceGraph(checkpointer?: unknown) {
 export const workforceGraph = buildWorkforceGraph();
 
 let checkpointerPromise: Promise<PostgresSaver | null> | null = null;
+let checkpointerPool: Pool | null = null;
 
-async function getPostgresCheckpointer() {
+export async function getPostgresCheckpointer() {
   if (!ENV.langgraphPostgresUrl) return null;
   if (!checkpointerPromise) {
     checkpointerPromise = (async () => {
-      const checkpointer = PostgresSaver.fromConnString(ENV.langgraphPostgresUrl);
+      // Keep sslmode=require in the secret. Supabase's pooler chain is not
+      // trusted by the WebDev runtime CA bundle, so pg receives an explicit
+      // encrypted TLS config while the URL still enforces SSL transport.
+      const poolUrl = new URL(ENV.langgraphPostgresUrl);
+      poolUrl.searchParams.delete("sslmode");
+      poolUrl.searchParams.delete("uselibpqcompat");
+      checkpointerPool = new Pool({ connectionString: poolUrl.toString(), ssl: { rejectUnauthorized: false }, max: 5 });
+      const checkpointer = new PostgresSaver(checkpointerPool);
       await checkpointer.setup();
       return checkpointer;
     })().catch((error) => {
       console.error("[LangGraph] Postgres checkpointer unavailable; using request-scoped fallback", error);
+      void checkpointerPool?.end();
+      checkpointerPool = null;
       return null;
     });
   }
   return checkpointerPromise;
 }
 
-export async function runWorkforceGraph(request: string, plan: WorkforcePlan | null, threadId = `right-hand-${Date.now()}`) {
-  const checkpointer = await getPostgresCheckpointer();
+export async function runWorkforceGraph(request: string, plan: WorkforcePlan | null, threadId = `right-hand-${Date.now()}`, options: { durable?: boolean } = {}) {
+  const checkpointer = options.durable === false ? null : await getPostgresCheckpointer();
   const graph = checkpointer ? buildWorkforceGraph(checkpointer) : workforceGraph;
   return graph.invoke({ request, plan, events: [], status: "intake" }, { configurable: { thread_id: threadId } });
 }
